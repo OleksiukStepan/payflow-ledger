@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
+# Local secrets
+.env
+
+# Agent rules stay local
+CLAUDE.md
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
