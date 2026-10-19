@@ -45,7 +45,8 @@ def deliver(url: str, secret: bytes, event: dict[str, Any], retries: int) -> tup
             status, answer = error.code, error.read().decode(errors="replace")[:200]
         except (urllib.error.URLError, TimeoutError) as error:
             status, answer = 0, str(error)
-        time.sleep(0.2 * 2**attempt)
+        if attempt < retries:
+            time.sleep(0.2 * 2**attempt)
     return status, answer
 
 
@@ -71,7 +72,7 @@ def _http_fetch(base_url: str) -> Callable[[str], Any]:
         try:
             with urllib.request.urlopen(base_url + path, timeout=10) as response:
                 return json.loads(response.read())
-        except urllib.error.HTTPError:
+        except (urllib.error.HTTPError, urllib.error.URLError):
             return None
 
     return fetch
