@@ -1,0 +1,3 @@
+# Mirrors the ruff settings in pyproject.toml for editors that run flake8
+[flake8]
+max-line-length = 120

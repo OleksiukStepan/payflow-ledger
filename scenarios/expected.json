@@ -1,0 +1,33 @@
+{
+  "acc_1": {
+    "available": "585.00",
+    "pending": "15.00",
+    "authorizations": {
+      "auth_100": {"status": "captured", "authorized": "125.50", "captured": "125.50", "refunded": "25.50"},
+      "auth_101": {"status": "reversed", "authorized": "40.00", "captured": "0.00", "refunded": "0.00"},
+      "auth_102": {"status": "captured", "authorized": "300.00", "captured": "300.00", "refunded": "0.00"},
+      "auth_103": {"status": "pending", "authorized": "15.00", "captured": "0.00", "refunded": "0.00"}
+    }
+  },
+  "acc_2": {
+    "available": "585.00",
+    "pending": "15.00",
+    "authorizations": {
+      "auth_200": {"status": "captured", "authorized": "125.50", "captured": "125.50", "refunded": "25.50"},
+      "auth_201": {"status": "reversed", "authorized": "40.00", "captured": "0.00", "refunded": "0.00"},
+      "auth_202": {"status": "captured", "authorized": "300.00", "captured": "300.00", "refunded": "0.00"},
+      "auth_203": {"status": "pending", "authorized": "15.00", "captured": "0.00", "refunded": "0.00"}
+    }
+  },
+  "acc_3": {
+    "available": "555.00",
+    "pending": "0.00",
+    "authorizations": {
+      "auth_301": {"status": "captured", "authorized": "300.00", "captured": "320.00", "refunded": "0.00"},
+      "auth_302": {"status": "captured", "authorized": "100.00", "captured": "80.00", "refunded": "15.00"},
+      "auth_303": {"status": "reversed", "authorized": "50.00", "captured": "0.00", "refunded": "0.00"},
+      "auth_305": {"status": "captured", "authorized": "60.00", "captured": "60.00", "refunded": "0.00"},
+      "auth_306": {"status": "pending", "authorized": "40.00", "captured": "0.00", "refunded": "0.00"}
+    }
+  }
+}
