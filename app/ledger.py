@@ -81,7 +81,8 @@ def _record_authorization_facts(
             Authorization.captured_amount, Authorization.reversed_amount
         )
     ).one()
-    if row.captured_amount is not None and row.reversed_amount is not None:
+    closes = "captured_amount" in facts or "reversed_amount" in facts
+    if closes and row.captured_amount is not None and row.reversed_amount is not None:
         logger.warning("Authorization %s is both captured and reversed, treating it as captured", data.authorization_id)
 
 

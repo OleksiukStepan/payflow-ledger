@@ -35,7 +35,7 @@ curl localhost:8000/accounts/acc_1/transactions
 docker compose run --rm --build tests
 ```
 
-The suite runs against a real PostgreSQL (a separate `payflow_test` database that every run drops, recreates and migrates), because the guarantees under test (`ON CONFLICT`, `NUMERIC`, concurrent transactions) are PostgreSQL behaviour. Outside Docker: `pip install -e ".[dev]"`, point `DATABASE_URL` at any PostgreSQL and run `pytest`.
+The suite runs against a real PostgreSQL (a separate `payflow_test` database that every run drops, recreates and migrates), because the guarantees under test (`ON CONFLICT`, `NUMERIC`, concurrent transactions) are PostgreSQL behaviour. Outside Docker: `pip install -e ".[dev]"`, point `DATABASE_URL` at a database whose name ends in `_test` (the suite drops and recreates it, and refuses any other name) and run `pytest`.
 
 ### Extra scenarios
 

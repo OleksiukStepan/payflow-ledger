@@ -77,6 +77,8 @@ def sign(body: bytes, secret: bytes = SECRET) -> str:
 @pytest.fixture(scope="session", autouse=True)
 def database() -> None:
     url = make_url(os.environ["DATABASE_URL"])
+    # The session drops this database, so refuse anything that is not clearly a test one.
+    assert url.database and url.database.endswith("_test"), "DATABASE_URL must point to a *_test database"
     admin = create_engine(url.set(database="postgres"), isolation_level="AUTOCOMMIT")
     with admin.connect() as connection:
         connection.execute(text(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)'))

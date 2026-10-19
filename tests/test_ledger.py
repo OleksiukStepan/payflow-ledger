@@ -177,7 +177,7 @@ def test_unknown_account_is_not_found(client):
 
 def test_capture_without_a_known_authorization_is_listed_with_unknown_details(send, fund, auth_event, client):
     fund()
-    send(auth_event("authorization.captured", "40.00"))
+    deliver_all(send, [auth_event("authorization.captured", "40.00")])
 
     assert balance_of(client)["available"] == "960.00"
     assert items_of(client) == [
@@ -214,6 +214,6 @@ def test_transactions_are_sorted_by_creation_time(send, fund, auth_event, client
 
 def test_available_can_go_negative(send, fund, auth_event, client):
     fund(amount="100.00")
-    send(auth_event("authorization.created", "150.00"))
+    deliver_all(send, [auth_event("authorization.created", "150.00")])
 
     assert balance_of(client)["available"] == "-50.00"
