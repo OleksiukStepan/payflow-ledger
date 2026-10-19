@@ -1,0 +1,18 @@
+[
+  {"id": "evt_edge_02", "type": "authorization.created", "created_at": "2026-10-19T09:01:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_301", "amount": "300.00", "merchant": "Hilton", "currency": "USD"}},
+  {"id": "evt_edge_03", "type": "authorization.captured", "created_at": "2026-10-19T09:40:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_301", "amount": "320.00", "currency": "USD"}},
+  {"id": "evt_edge_01", "type": "account.funded", "created_at": "2026-10-19T09:00:00Z", "data": {"account_id": "acc_3", "amount": "1000.00", "currency": "USD"}},
+  {"id": "evt_edge_04", "type": "authorization.created", "created_at": "2026-10-19T09:02:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_302", "amount": "100.00", "merchant": "Shell", "currency": "USD"}},
+  {"id": "evt_edge_05", "type": "authorization.captured", "created_at": "2026-10-19T09:41:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_302", "amount": "80.00", "currency": "USD"}},
+  {"id": "evt_edge_05", "type": "authorization.captured", "created_at": "2026-10-19T09:41:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_302", "amount": "80.00", "currency": "USD"}},
+  {"id": "evt_edge_06", "type": "authorization.created", "created_at": "2026-10-19T09:03:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_303", "amount": "50.00", "merchant": "Uber", "currency": "USD"}},
+  {"id": "evt_edge_07", "type": "authorization.reversed", "created_at": "2026-10-19T09:42:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_303", "amount": "20.00", "currency": "USD"}},
+  {"id": "evt_edge_08", "type": "authorization.reversed", "created_at": "2026-10-19T09:43:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_305", "amount": "60.00", "currency": "USD"}},
+  {"id": "evt_edge_09", "type": "authorization.captured", "created_at": "2026-10-19T09:44:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_305", "amount": "60.00", "currency": "USD"}},
+  {"id": "evt_edge_10", "type": "authorization.created", "created_at": "2026-10-19T09:04:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_305", "amount": "60.00", "merchant": "AWS", "currency": "USD"}},
+  {"id": "evt_edge_11", "type": "refund.created", "created_at": "2026-10-19T09:50:00Z", "data": {"account_id": "acc_3", "refund_id": "re_301", "authorization_id": "auth_302", "amount": "10.00", "currency": "USD"}},
+  {"id": "evt_edge_12", "type": "refund.created", "created_at": "2026-10-19T09:51:00Z", "data": {"account_id": "acc_3", "refund_id": "re_302", "authorization_id": "auth_302", "amount": "5.00", "currency": "USD"}},
+  {"id": "evt_edge_13", "type": "refund.created", "created_at": "2026-10-19T09:52:00Z", "data": {"account_id": "acc_3", "refund_id": "re_301", "authorization_id": "auth_302", "amount": "10.00", "currency": "USD"}},
+  {"id": "evt_edge_14", "type": "card.frozen", "created_at": "2026-10-19T09:53:00Z", "data": {"account_id": "acc_3", "card_id": "card_1"}},
+  {"id": "evt_edge_15", "type": "authorization.created", "created_at": "2026-10-19T09:05:00Z", "data": {"account_id": "acc_3", "authorization_id": "auth_306", "amount": "40.00", "merchant": "Lufthansa", "currency": "EUR"}}
+]
