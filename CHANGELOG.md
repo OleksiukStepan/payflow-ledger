@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `make verify` / `scripts/replay.py`: delivers event files the way the PayFlow docs describe
+  (shuffled, duplicated, in parallel) and checks every balance and authorization against
+  `scenarios/expected.json`; CI runs it twice to prove the second run changes nothing.
+- Property-based tests (Hypothesis): random account histories in random order with random
+  repeats always equal an in-order delivery and always satisfy the balance formula.
+- Swagger at `/docs` explains webhook signing, shows an example per event type and documents
+  exactly the answers the service gives.
+- Read-only account page at `/`: balance, the formula written out, every authorization,
+  auto-refresh; webhook data is rendered as text only, under a strict Content-Security-Policy.
+- `WEBHOOK_SECRET_PREVIOUS` keeps the old secret valid during a rotation.
+- README compares the service with Stripe's current webhook and Issuing guidance.
 - PayFlow webhook intake at `POST /webhooks`: the HMAC-SHA256 signature is checked over the raw
   body in constant time, the body is capped at 64 KB, events are validated strictly (amounts as
   two-decimal strings, ISO 4217 currency codes). A bad signature answers 401, an invalid payload

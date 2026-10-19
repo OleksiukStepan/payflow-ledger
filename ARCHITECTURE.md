@@ -1,13 +1,14 @@
 # ARCHITECTURE — PayFlow Ledger
 
 Code map, data model and invariants. Keep it under 150 lines; update it in the same PR as any
-structural change (new table, event type, endpoint). State as of 2026-10-19.
+structural change (new table, event type, endpoint). State as of 2026-10-20.
 
 ## Shape
 
 ```
 PayFlow ──POST /webhooks (HMAC-signed JSON, at-least-once, any order, parallel)──▶ FastAPI ──▶ PostgreSQL
 Clients ──GET /accounts/{id}/balance | /transactions──────────────────────────────▶ FastAPI ──▶ PostgreSQL
+Browser ──GET / (static page, same two GET endpoints) and /docs (Swagger)──────────▶ FastAPI
 ```
 
 One process, one database. No queue: each webhook is one short transaction.
@@ -16,15 +17,18 @@ One process, one database. No queue: each webhook is one short transaction.
 
 | File | Owns |
 |---|---|
-| `app/main.py` | routes, body size cap, the HTTP status of every outcome |
-| `app/signature.py` | HMAC-SHA256 over the raw body, constant-time comparison |
+| `app/main.py` | routes, body size cap, the HTTP status of every outcome, the dashboard route and its security headers |
+| `app/api_docs.py` | OpenAPI description, request examples and documented answers (kept out of `main.py`) |
+| `app/signature.py` | HMAC-SHA256 over the raw body, constant-time comparison against the current and the previous secret |
 | `app/schemas.py` | strict input models per event type, money and currency formats, response models |
 | `app/ledger.py` | `process_event` (dedupe + apply in one transaction), one applier per event type, balance and transactions queries |
 | `app/models.py` | tables and the generated `status` column |
-| `app/db.py`, `app/config.py` | engine and session, settings from the environment (fail fast if missing) |
+| `app/db.py`, `app/config.py` | engine and session, settings from the environment (fail fast if missing or empty) |
+| `app/static/` | read-only account page: `index.html`, `dashboard.js` (DOM via `textContent` only), `dashboard.css` |
 | `migrations/` | Alembic; `0001` is the whole schema |
-| `tests/` | pytest against real PostgreSQL: signature and validation, ledger rules, ordering, concurrency, scenario files |
-| `scenarios/` | extra event files for `PayFlowEventsSender.py` |
+| `tests/` | pytest against real PostgreSQL: signature and validation, ledger rules, ordering, concurrency, property-based (Hypothesis), scenario files, API docs, dashboard headers |
+| `scenarios/` | extra event files and `expected.json`, the single source of expected results |
+| `scripts/replay.py` | stdlib-only sender with PayFlow's documented delivery (shuffle, duplicates, parallel) and an expectations check; `make verify` runs it |
 
 ## Webhook flow
 
@@ -75,6 +79,7 @@ The four sums are scalar subqueries of one `SELECT`, so they read one snapshot.
 - No running totals: every number in a response is derived on read.
 - Any stored event answers 2xx. Only 400 / 401 / 413 make PayFlow retry, and none of them stores anything.
 - Money is `Decimal` / `NUMERIC(14,2)`; amounts on the wire are strings with two decimals.
+- The page never renders API data as HTML (`textContent` only) and is served with a CSP without inline scripts; merchant names come from webhooks.
 - Adding an event type: a model in `schemas.DATA_MODELS`, an applier in `ledger.APPLIERS`, a test that it is idempotent and order-independent, and a row in the tables above.
 
 ## Boundaries
