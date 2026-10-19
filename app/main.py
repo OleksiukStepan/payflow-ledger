@@ -1,7 +1,10 @@
 import logging
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -19,6 +22,22 @@ logger = logging.getLogger("payflow.api")
 app = FastAPI(title="PayFlow Ledger", version="0.1.0", description=DESCRIPTION)
 
 SessionDep = Annotated[Session, Depends(get_session)]
+
+STATIC_DIR = Path(__file__).parent / "static"
+# The page shows data that arrived in webhooks: no inline scripts, no third-party origins, no framing.
+DASHBOARD_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+}
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def dashboard() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html", headers=DASHBOARD_HEADERS)
 
 
 @app.get("/health")
