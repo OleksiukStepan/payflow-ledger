@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: payflow
+          POSTGRES_PASSWORD: payflow
+          POSTGRES_DB: payflow
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U payflow -d payflow"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgresql+psycopg://payflow:payflow@localhost:5432/payflow_test
+      WEBHOOK_SECRET: whsec_test_123
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install ".[dev]"
+      - name: Lint
+        run: ruff check . && ruff format --check .
+      - name: Security lint (bandit)
+        run: bandit -q -r app
+      - name: Dependency audit (pip-audit)
+        # the project itself is not on PyPI: audit the installed third-party set
+        run: pip freeze | grep -v '^payflow-ledger' > /tmp/deps.txt && pip-audit --strict -r /tmp/deps.txt
+      - name: Tests
+        run: pytest -q
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the stack
+        run: docker compose up --build -d --wait
+      - name: Smoke check
+        run: |
+          curl -fsS http://localhost:8000/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/accounts/acc_1/balance)" = 404
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
