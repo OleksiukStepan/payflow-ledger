@@ -18,3 +18,5 @@
 - Tests for signature and validation, ledger rules, 50 shuffled deliveries with duplicates,
   parallel delivery from 16 threads, and two scenario files for `PayFlowEventsSender.py`.
 - CI: ruff, bandit, pip-audit, pytest on PostgreSQL and a compose smoke run.
+- Safety guards: the service refuses to start with an empty `WEBHOOK_SECRET`, and the test
+  suite refuses a `DATABASE_URL` whose database name does not end in `_test` (it drops it).
