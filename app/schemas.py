@@ -74,6 +74,10 @@ def parse_event(body: bytes) -> tuple[Event, EventData | None]:
     return event, model.model_validate(event.data) if model else None
 
 
+class WebhookAck(BaseModel):
+    status: Literal["ok", "duplicate", "ignored"]
+
+
 class Balance(BaseModel):
     account_id: str
     currency: str

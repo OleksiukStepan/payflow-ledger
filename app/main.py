@@ -7,15 +7,16 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app import ledger
+from app.api_docs import ACCOUNT_NOT_FOUND, DESCRIPTION, WEBHOOK_REQUEST_BODY, WEBHOOK_RESPONSES
 from app.config import MAX_BODY_BYTES
 from app.db import get_session
-from app.schemas import Balance, Transactions, parse_event
+from app.schemas import Balance, Transactions, WebhookAck, parse_event
 from app.signature import is_valid_signature
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("payflow.api")
 
-app = FastAPI(title="PayFlow Ledger")
+app = FastAPI(title="PayFlow Ledger", version="0.1.0", description=DESCRIPTION)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -34,8 +35,8 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
-@app.post("/webhooks")
-async def receive_webhook(request: Request) -> dict[str, str]:
+@app.post("/webhooks", responses=WEBHOOK_RESPONSES, openapi_extra=WEBHOOK_REQUEST_BODY)
+async def receive_webhook(request: Request) -> WebhookAck:
     body = await _read_body(request)
     if not is_valid_signature(body, request.headers.get("X-PayFlow-Signature")):
         logger.warning("Rejected a webhook with an invalid signature")
@@ -48,10 +49,10 @@ async def receive_webhook(request: Request) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=errors) from None
     # The DB layer is synchronous; running it in a thread keeps the event loop free.
     status = await run_in_threadpool(ledger.process_event, event, data)
-    return {"status": status}
+    return WebhookAck(status=status)
 
 
-@app.get("/accounts/{account_id}/balance")
+@app.get("/accounts/{account_id}/balance", responses=ACCOUNT_NOT_FOUND)
 def get_balance(account_id: str, session: SessionDep) -> Balance:
     balance = ledger.get_balance(session, account_id)
     if balance is None:
@@ -59,7 +60,7 @@ def get_balance(account_id: str, session: SessionDep) -> Balance:
     return balance
 
 
-@app.get("/accounts/{account_id}/transactions")
+@app.get("/accounts/{account_id}/transactions", responses=ACCOUNT_NOT_FOUND)
 def get_transactions(account_id: str, session: SessionDep) -> Transactions:
     transactions = ledger.get_transactions(session, account_id)
     if transactions is None:
