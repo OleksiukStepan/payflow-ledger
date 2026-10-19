@@ -1,12 +1,17 @@
 import hashlib
 import hmac
 
-from app.config import WEBHOOK_SECRET
+from app.config import WEBHOOK_SECRETS
 
 
 def is_valid_signature(body: bytes, signature: str | None) -> bool:
     if not signature:
         return False
-    expected = hmac.new(WEBHOOK_SECRET, body, hashlib.sha256).hexdigest().encode()
     # Bytes, not str: compare_digest raises TypeError on non-ASCII strings, and a header can carry any byte.
-    return hmac.compare_digest(expected, signature.encode())
+    received = signature.encode()
+    # Check every configured secret, so the time taken does not reveal which one matched.
+    matches = [
+        hmac.compare_digest(hmac.new(secret, body, hashlib.sha256).hexdigest().encode(), received)
+        for secret in WEBHOOK_SECRETS
+    ]
+    return any(matches)
