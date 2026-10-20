@@ -91,8 +91,7 @@ def _apply_authorization_reversed(session: Session, event: IncomingEvent, data: 
 def _record_authorization_facts(
     session: Session, data: AuthorizationCreated | AuthorizationClosed, version: tuple[Any, Any], **facts: Any
 ) -> None:
-    # Each event type owns its columns, and a fact only replaces an older one (by time, then amount):
-    # the result is the same whatever order the events arrive in.
+    # Each event type owns its columns and only replaces an older fact (time, then amount): order never matters.
     statement = insert(Authorization).values(
         {"authorization_id": data.authorization_id, "account_id": data.account_id, "currency": data.currency, **facts}
     )

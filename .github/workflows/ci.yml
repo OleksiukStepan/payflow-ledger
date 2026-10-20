@@ -48,6 +48,7 @@ jobs:
         run: |
           curl -fsS http://localhost:8000/health
           curl -fsS -o /dev/null http://localhost:8000/
+          curl -fsS -o /dev/null http://localhost:8000/static/dashboard.js
           curl -fsS -o /dev/null http://localhost:8000/docs
       - name: Replay every event file shuffled, duplicated and in parallel
         run: make verify
