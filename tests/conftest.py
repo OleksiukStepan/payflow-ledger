@@ -136,24 +136,13 @@ def make_event() -> Callable[..., dict[str, Any]]:
 
 @pytest.fixture
 def happy_path() -> list[dict[str, Any]]:
-    return json.loads((ROOT / "tests" / "fixtures" / "happy_path.json").read_text())
+    return json.loads((ROOT / "scenarios" / "happy_path.json").read_text())
 
 
 @pytest.fixture
-def ledger_state(client: TestClient) -> Callable[[str], tuple[Any, Any]]:
-    def state(account_id: str = "acc_1") -> tuple[Any, Any]:
-        balance = client.get(f"/accounts/{account_id}/balance")
-        transactions = client.get(f"/accounts/{account_id}/transactions")
-        return balance.json(), transactions.json()
-
-    return state
-
-
-@pytest.fixture
-def assert_happy_state(ledger_state: Callable[[str], tuple[Any, Any]]) -> Callable[[], None]:
+def assert_happy_state(client: TestClient) -> Callable[[], None]:
     def check() -> None:
-        balance, transactions = ledger_state("acc_1")
-        assert balance == HAPPY_BALANCE
-        assert transactions == {"items": HAPPY_ITEMS}
+        assert client.get("/accounts/acc_1/balance").json() == HAPPY_BALANCE
+        assert client.get("/accounts/acc_1/transactions").json() == {"items": HAPPY_ITEMS}
 
     return check

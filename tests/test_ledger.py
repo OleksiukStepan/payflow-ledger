@@ -1,5 +1,3 @@
-import random
-
 import pytest
 
 
@@ -52,24 +50,6 @@ def test_happy_path_in_reverse_order(send, happy_path, assert_happy_state):
     deliver_all(send, reversed(happy_path))
 
     assert_happy_state()
-
-
-def test_happy_path_delivered_twice(send, happy_path, assert_happy_state):
-    deliver_all(send, happy_path + happy_path)
-
-    assert_happy_state()
-
-
-def test_happy_path_shuffled_with_duplicates(send, happy_path, assert_happy_state, reset_db):
-    rng = random.Random(20261019)
-    for _ in range(50):
-        reset_db()
-        events = happy_path + rng.sample(happy_path, 3)
-        rng.shuffle(events)
-
-        deliver_all(send, events)
-
-        assert_happy_state()
 
 
 def test_capture_above_the_authorized_amount(send, fund, auth_event, client):

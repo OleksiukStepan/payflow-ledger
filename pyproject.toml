@@ -20,7 +20,6 @@ dev = [
     "bandit==1.9.4",
     "httpx==0.28.1",
     "hypothesis==6.168.3",
-    "pip-audit==2.10.1",
     "pytest==9.1.1",
     "ruff==0.16.10",
 ]

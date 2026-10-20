@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app import ledger
-from app.api_docs import ACCOUNT_NOT_FOUND, DESCRIPTION, WEBHOOK_REQUEST_BODY, WEBHOOK_RESPONSES
+from app.api_docs import ACCOUNT_NOT_FOUND, DESCRIPTION, WEBHOOK_OPENAPI, WEBHOOK_RESPONSES
 from app.config import MAX_BODY_BYTES
 from app.db import get_session
 from app.schemas import Balance, Transactions, WebhookAck, parse_event
@@ -62,7 +62,7 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
-@app.post("/webhooks", responses=WEBHOOK_RESPONSES, openapi_extra=WEBHOOK_REQUEST_BODY)
+@app.post("/webhooks", responses=WEBHOOK_RESPONSES, openapi_extra=WEBHOOK_OPENAPI)
 async def receive_webhook(request: Request) -> WebhookAck:
     body = await _read_body(request)
     if not is_valid_signature(body, request.headers.get("X-PayFlow-Signature")):

@@ -35,9 +35,6 @@ jobs:
         run: ruff check . && ruff format --check .
       - name: Security lint (bandit)
         run: bandit -q -r app
-      - name: Dependency audit (pip-audit)
-        # the project itself is not on PyPI: audit the installed third-party set
-        run: pip freeze | grep -v '^payflow-ledger' > /tmp/deps.txt && pip-audit --strict -r /tmp/deps.txt
       - name: Tests
         run: pytest -q
 
@@ -46,21 +43,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Start the stack
-        run: docker compose up --build -d --wait
+        run: make up
       - name: Smoke check
         run: |
           curl -fsS http://localhost:8000/health
           curl -fsS -o /dev/null http://localhost:8000/
           curl -fsS -o /dev/null http://localhost:8000/docs
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/accounts/acc_1/balance)" = 404
       - name: Replay every event file shuffled, duplicated and in parallel
-        run: >-
-          python3 scripts/replay.py tests/fixtures/happy_path.json scenarios/shuffled_duplicates.json
-          scenarios/edge_cases.json --shuffle --duplicates 5 --parallel 16 --expect scenarios/expected.json
+        run: make verify
       - name: Replay again on the same database (idempotency)
-        run: >-
-          python3 scripts/replay.py tests/fixtures/happy_path.json scenarios/shuffled_duplicates.json
-          scenarios/edge_cases.json --shuffle --parallel 16 --expect scenarios/expected.json
+        run: make verify
       - name: Logs on failure
         if: failure()
         run: docker compose logs

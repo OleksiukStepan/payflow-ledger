@@ -2,140 +2,86 @@
 
 // Every value from the API reaches the page through textContent only: merchant names come from webhooks.
 const STATUSES = new Set(["pending", "captured", "reversed"]);
-const REFRESH_MS = 3000;
-
 const byId = (id) => document.getElementById(id);
 let latestRequest = 0;
 
-// Money stays in integer cents: "125.50" -> 12550, never a float.
-function toCents(amount) {
-  const negative = amount.startsWith("-");
-  const [whole, fraction = "0"] = amount.replace("-", "").split(".");
-  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0").slice(0, 2));
-  return negative ? -cents : cents;
-}
-
-function formatCents(cents) {
-  const sign = cents < 0 ? "-" : "";
-  const absolute = Math.abs(cents);
-  return `${sign}${Math.floor(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`;
-}
-
-function cell(text, className) {
+function cell(text, className = "") {
   const element = document.createElement("td");
   element.textContent = text;
-  if (className) element.className = className;
+  element.className = className;
   return element;
 }
 
-function statusCell(status) {
-  const element = document.createElement("td");
+function row(item, accountCurrency) {
+  const element = document.createElement("tr");
   const pill = document.createElement("span");
-  pill.className = `pill ${STATUSES.has(status) ? status : "unknown"}`;
-  pill.textContent = status;
-  element.append(pill);
+  pill.className = `pill ${STATUSES.has(item.status) ? item.status : ""}`;
+  pill.textContent = item.status;
+  const status = cell("");
+  status.append(pill);
+  const money = (amount) => (amount === null ? "unknown" : `${amount} ${item.currency}`);
+  element.append(
+    cell(item.authorization_id, "mono"),
+    cell(item.merchant ?? "unknown yet", item.merchant ? "" : "muted"),
+    status,
+    cell(money(item.authorized_amount), "num"),
+    cell(money(item.captured_amount), "num"),
+    cell(money(item.refunded_amount), "num"),
+    cell(item.created_at ? item.created_at.replace("T", " ").replace("Z", " UTC") : "unknown yet", "muted"),
+  );
+  if (item.currency !== accountCurrency) element.className = "foreign";
   return element;
 }
 
-function renderRows(items, currency) {
-  const rows = items.map((item) => {
-    const row = document.createElement("tr");
-    const foreign = item.currency !== currency;
-    row.append(
-      cell(item.authorization_id, "mono"),
-      cell(item.merchant ?? "unknown yet", item.merchant ? "" : "muted"),
-      statusCell(item.status),
-      cell(item.authorized_amount === null ? "unknown" : `${item.authorized_amount} ${item.currency}`, "num"),
-      cell(`${item.captured_amount} ${item.currency}`, "num"),
-      cell(`${item.refunded_amount} ${item.currency}`, "num"),
-      cell(item.created_at ? item.created_at.replace("T", " ").replace("Z", " UTC") : "unknown yet", "muted"),
-    );
-    if (foreign) {
-      row.className = "foreign";
-      row.title = `In ${item.currency}, not the account currency: left out of the balance`;
-    }
-    return row;
-  });
-  byId("rows").replaceChildren(...rows);
-}
-
-function renderAccount(balance, items) {
-  const inCurrency = items.filter((item) => item.currency === balance.currency);
-  const captured = inCurrency.reduce((sum, item) => sum + toCents(item.captured_amount), 0);
-  const refunded = inCurrency.reduce((sum, item) => sum + toCents(item.refunded_amount), 0);
-  const available = toCents(balance.available);
-  const pending = toCents(balance.pending);
-  const funded = available + pending + captured - refunded;
-
-  byId("available").textContent = balance.available;
-  byId("currency").textContent = balance.currency;
-  byId("pending").textContent = balance.pending;
-  byId("captured").textContent = formatCents(captured);
-  byId("refunded").textContent = formatCents(refunded);
-  byId("formula").textContent =
-    `${formatCents(funded)} funded − ${balance.pending} pending − ${formatCents(captured)} captured + ` +
-    `${formatCents(refunded)} refunded = ${balance.available} available`;
-  renderRows(items, balance.currency);
-}
-
-function showOnly(sectionId) {
+function show(sectionId) {
   for (const id of ["account", "empty", "error"]) byId(id).hidden = id !== sectionId;
 }
 
 async function load(accountId) {
-  // A slower answer for an older request must not overwrite a newer one.
+  // A slower answer to an older request must not overwrite a newer one.
   const request = ++latestRequest;
   const path = `/accounts/${encodeURIComponent(accountId)}`;
   try {
-    const [balanceResponse, transactionsResponse] = await Promise.all([
-      fetch(`${path}/balance`),
-      fetch(`${path}/transactions`),
-    ]);
-    const [balance, transactions] = await Promise.all([
-      balanceResponse.ok ? balanceResponse.json() : null,
-      transactionsResponse.ok ? transactionsResponse.json() : null,
-    ]);
+    const [balance, transactions] = await Promise.all(
+      [`${path}/balance`, `${path}/transactions`].map(async (url) => {
+        const response = await fetch(url);
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(`API answered ${response.status}`);
+        return response.json();
+      }),
+    );
     if (request !== latestRequest) return;
-    if (balanceResponse.status === 404) {
+    if (balance === null) {
       byId("empty-text").textContent = `No account.funded event has arrived for "${accountId}" yet.`;
-      showOnly("empty");
-    } else if (!balanceResponse.ok || !transactionsResponse.ok) {
-      throw new Error(`API answered ${balanceResponse.status} / ${transactionsResponse.status}`);
+      show("empty");
     } else {
-      renderAccount(balance, transactions.items);
-      showOnly("account");
+      byId("available").textContent = `${balance.available} ${balance.currency}`;
+      byId("pending").textContent = `${balance.pending} ${balance.currency}`;
+      byId("rows").replaceChildren(...transactions.items.map((item) => row(item, balance.currency)));
+      show("account");
     }
     byId("updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
   } catch (error) {
     if (request !== latestRequest) return;
     byId("error").textContent = `Could not load the account: ${error.message}`;
-    showOnly("error");
+    show("error");
   }
-}
-
-function currentAccount() {
-  return byId("account-id").value.trim();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  const input = byId("account-id");
   try {
-    const fromHash = decodeURIComponent(location.hash.slice(1));
-    if (fromHash) byId("account-id").value = fromHash;
+    if (location.hash.length > 1) input.value = decodeURIComponent(location.hash.slice(1));
   } catch {
     // A malformed link keeps the default account instead of breaking the page.
   }
-
   byId("account-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    history.replaceState(null, "", `#${encodeURIComponent(currentAccount())}`);
-    load(currentAccount());
+    history.replaceState(null, "", `#${encodeURIComponent(input.value.trim())}`);
+    load(input.value.trim());
   });
-
   setInterval(() => {
-    if (byId("auto-refresh").checked && document.visibilityState === "visible" && currentAccount()) {
-      load(currentAccount());
-    }
-  }, REFRESH_MS);
-
-  load(currentAccount());
+    if (byId("auto-refresh").checked && document.visibilityState === "visible") load(input.value.trim());
+  }, 3000);
+  load(input.value.trim());
 });

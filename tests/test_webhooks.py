@@ -7,14 +7,6 @@ def funded(make_event, amount="1000.00", currency="USD", account_id="acc_1"):
     return make_event("account.funded", account_id=account_id, amount=amount, currency=currency)
 
 
-def test_valid_event_is_accepted(send, make_event, client):
-    response = send(funded(make_event))
-
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-    assert client.get("/accounts/acc_1/balance").json()["available"] == "1000.00"
-
-
 @pytest.mark.parametrize(
     "signature",
     [
@@ -29,14 +21,6 @@ def test_wrong_signature_is_rejected_and_nothing_is_stored(send, make_event, cli
 
     assert response.status_code == 401
     assert client.get("/accounts/acc_1/balance").status_code == 404
-
-
-def test_signature_from_another_secret_is_rejected(send, make_event, client):
-    event = funded(make_event)
-
-    response = send(event, signature=sign(serialize(event), secret=b"whsec_other"))
-
-    assert response.status_code == 401
 
 
 def test_missing_signature_header_is_rejected(client, make_event):

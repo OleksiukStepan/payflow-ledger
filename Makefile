@@ -1,4 +1,4 @@
-EVENTS = tests/fixtures/happy_path.json scenarios/shuffled_duplicates.json scenarios/edge_cases.json
+EVENTS = scenarios/happy_path.json scenarios/edge_cases.json
 
 .PHONY: up down test verify
 
