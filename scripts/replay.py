@@ -17,11 +17,6 @@ from typing import Any
 
 FIELDS = {"authorized": "authorized_amount", "captured": "captured_amount", "refunded": "refunded_amount"}
 
-EXAMPLES = """examples:
-  python3 scripts/replay.py tests/fixtures/happy_path.json
-  python3 scripts/replay.py tests/fixtures/happy_path.json scenarios/shuffled_duplicates.json \\
-      scenarios/edge_cases.json --shuffle --duplicates 5 --parallel 16 --expect scenarios/expected.json"""
-
 
 def build_delivery(events: list[dict[str, Any]], shuffle: bool, duplicates: int, rng: random.Random) -> list:
     delivery = events + [rng.choice(events) for _ in range(duplicates)] if events else []
@@ -79,9 +74,7 @@ def _http_fetch(base_url: str) -> Callable[[str], Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("events_files", nargs="+", help="JSON files with arrays of events")
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--secret", default="whsec_test_123")

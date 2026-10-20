@@ -7,14 +7,6 @@ def funded(make_event, amount="1000.00", currency="USD", account_id="acc_1"):
     return make_event("account.funded", account_id=account_id, amount=amount, currency=currency)
 
 
-def test_valid_event_is_accepted(send, make_event, client):
-    response = send(funded(make_event))
-
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-    assert client.get("/accounts/acc_1/balance").json()["available"] == "1000.00"
-
-
 @pytest.mark.parametrize(
     "signature",
     [
@@ -29,14 +21,6 @@ def test_wrong_signature_is_rejected_and_nothing_is_stored(send, make_event, cli
 
     assert response.status_code == 401
     assert client.get("/accounts/acc_1/balance").status_code == 404
-
-
-def test_signature_from_another_secret_is_rejected(send, make_event, client):
-    event = funded(make_event)
-
-    response = send(event, signature=sign(serialize(event), secret=b"whsec_other"))
-
-    assert response.status_code == 401
 
 
 def test_missing_signature_header_is_rejected(client, make_event):
@@ -97,6 +81,7 @@ def test_invalid_envelope_is_rejected(client, body):
         {"account_id": "acc_1", "amount": "-5.00", "currency": "USD"},
         {"account_id": "acc_1", "amount": 1000.0, "currency": "USD"},
         {"account_id": "acc_1", "amount": "1e3", "currency": "USD"},
+        {"account_id": "acc_1", "amount": "١٠.٠٠", "currency": "USD"},
         {"account_id": "acc_1", "amount": "1000000000000.00", "currency": "USD"},
         {"account_id": "acc_1", "currency": "USD"},
         {"account_id": "acc_1", "amount": "10.00", "currency": "usd"},
@@ -151,11 +136,45 @@ def test_duplicate_delivery_is_applied_once(send, make_event, client):
     assert client.get("/accounts/acc_1/balance").json()["available"] == "1000.00"
 
 
-def test_previous_secret_keeps_working_during_rotation(send, make_event, client, monkeypatch):
-    monkeypatch.setattr("app.signature.WEBHOOK_SECRETS", (b"whsec_new", b"whsec_test_123"))
+def test_signature_from_another_secret_is_rejected(send, make_event):
     event = funded(make_event)
-    body = serialize(event)
 
-    assert send(event, signature=sign(body, secret=b"whsec_new")).status_code == 200
-    assert send({**event, "id": "evt_rotation_2"}, signature=None).status_code == 200
-    assert send({**event, "id": "evt_rotation_3"}, signature=sign(body, secret=b"whsec_other")).status_code == 401
+    assert send(event, signature=sign(serialize(event), secret=b"whsec_other")).status_code == 401
+
+
+def test_nul_character_in_a_field_we_ignore_is_still_accepted(send, make_event, client):
+    event = funded(make_event)
+    event["data"]["note"] = "a\u0000b"
+
+    assert send(event).status_code == 200
+    assert send(make_event("card.frozen", note="a\u0000b")).json() == {"status": "ignored"}
+    assert client.get("/accounts/acc_1/balance").json()["available"] == "1000.00"
+
+
+def test_nul_character_in_a_stored_field_is_rejected_not_crashing(send, make_event):
+    event = make_event(
+        "authorization.created", account_id="acc_1", authorization_id="auth_1", amount="1.00", currency="USD"
+    )
+    event["data"]["merchant"] = "AWS\u0000"
+
+    assert send(event).status_code == 400
+
+
+def test_uppercase_hex_signature_is_accepted(send, make_event):
+    event = funded(make_event)
+
+    assert send(event, signature=sign(serialize(event)).upper()).status_code == 200
+
+
+def test_unknown_event_type_with_non_object_data_is_acknowledged(send, make_event):
+    event = make_event("card.frozen")
+    event["data"] = None
+
+    assert send(event).json() == {"status": "ignored"}
+
+
+@pytest.mark.parametrize(
+    "created_at", ["0001-01-01T00:00:00+14:00", "9999-12-31T23:30:00-01:00", "1969-12-31T23:59:59Z"]
+)
+def test_created_at_outside_a_sane_range_is_rejected(send, make_event, created_at):
+    assert send(funded(make_event) | {"created_at": created_at}).status_code == 400

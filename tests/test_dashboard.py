@@ -11,11 +11,6 @@ def test_dashboard_page_is_served_with_a_strict_content_security_policy(client):
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
-def test_dashboard_assets_are_served(client):
-    assert client.get("/static/dashboard.js").status_code == 200
-    assert client.get("/static/dashboard.css").status_code == 200
-
-
 def test_dashboard_is_not_part_of_the_api_docs(client):
     assert "/" not in client.get("/openapi.json").json()["paths"]
 

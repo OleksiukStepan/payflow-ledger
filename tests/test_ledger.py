@@ -1,5 +1,3 @@
-import random
-
 import pytest
 
 
@@ -52,24 +50,6 @@ def test_happy_path_in_reverse_order(send, happy_path, assert_happy_state):
     deliver_all(send, reversed(happy_path))
 
     assert_happy_state()
-
-
-def test_happy_path_delivered_twice(send, happy_path, assert_happy_state):
-    deliver_all(send, happy_path + happy_path)
-
-    assert_happy_state()
-
-
-def test_happy_path_shuffled_with_duplicates(send, happy_path, assert_happy_state, reset_db):
-    rng = random.Random(20261019)
-    for _ in range(50):
-        reset_db()
-        events = happy_path + rng.sample(happy_path, 3)
-        rng.shuffle(events)
-
-        deliver_all(send, events)
-
-        assert_happy_state()
 
 
 def test_capture_above_the_authorized_amount(send, fund, auth_event, client):
@@ -217,3 +197,81 @@ def test_available_can_go_negative(send, fund, auth_event, client):
     deliver_all(send, [auth_event("authorization.created", "150.00")])
 
     assert balance_of(client)["available"] == "-50.00"
+
+
+def test_account_ids_with_a_slash_can_be_read(fund, client):
+    fund(account_id="team/acc")
+
+    assert client.get("/accounts/team%2Facc/balance").json()["available"] == "1000.00"
+    assert client.get("/accounts/team%2Facc/transactions").json() == {"items": []}
+
+
+def test_refunded_amount_only_counts_refunds_the_balance_counts(send, fund, auth_event, make_event, client):
+    fund()
+    deliver_all(send, [auth_event("authorization.created", "100.00"), auth_event("authorization.captured", "100.00")])
+    refund = {"authorization_id": "auth_1", "refund_id": "re_eur", "amount": "5.00"}
+    deliver_all(send, [make_event("refund.created", account_id="acc_1", currency="EUR", **refund)])
+
+    assert balance_of(client)["available"] == "900.00"
+    assert items_of(client)[0]["refunded_amount"] == "0.00"
+
+
+def test_an_authorization_id_reused_by_another_account_does_not_touch_the_first(send, fund, auth_event, client):
+    fund()
+    fund(account_id="acc_other")
+    deliver_all(send, [auth_event("authorization.created", "100.00")])
+
+    deliver_all(send, [auth_event("authorization.captured", "100.00", account_id="acc_other")])
+
+    assert balance_of(client) == {"account_id": "acc_1", "currency": "USD", "available": "900.00", "pending": "100.00"}
+    assert balance_of(client, "acc_other")["available"] == "1000.00"
+
+
+@pytest.mark.parametrize("arrival", ["older_first", "newer_first"])
+def test_a_repeated_capture_keeps_the_newest_one_in_any_order(send, fund, auth_event, client, arrival):
+    fund()
+    older = auth_event("authorization.captured", "100.00", created_at="2026-10-19T10:05:00Z")
+    newer = auth_event("authorization.captured", "60.00", created_at="2026-10-19T11:00:00Z")
+    deliver_all(send, [auth_event("authorization.created", "100.00")])
+
+    deliver_all(send, [older, newer] if arrival == "older_first" else [newer, older])
+
+    assert items_of(client)[0]["captured_amount"] == "60.00"
+    assert balance_of(client)["available"] == "940.00"
+
+
+@pytest.mark.parametrize("arrival", ["small_first", "large_first"])
+def test_repeated_facts_at_the_same_time_resolve_the_same_way_in_any_order(send, fund, auth_event, client, arrival):
+    fund()
+    small = auth_event("authorization.created", "40.00", created_at="2026-10-19T10:00:00Z")
+    large = auth_event("authorization.created", "70.00", created_at="2026-10-19T10:00:00Z")
+
+    deliver_all(send, [small, large] if arrival == "small_first" else [large, small])
+
+    assert balance_of(client)["pending"] == "70.00"
+
+
+def test_long_merchant_names_are_kept(send, fund, auth_event, client):
+    fund()
+    deliver_all(send, [auth_event("authorization.created", "10.00", merchant="M" * 300)])
+
+    assert items_of(client)[0]["merchant"] == "M" * 300
+
+
+def test_created_at_is_shown_in_utc_without_fractions(send, fund, auth_event, client):
+    fund()
+    deliver_all(send, [auth_event("authorization.created", "10.00", created_at="2026-10-19T13:01:00.5+03:00")])
+
+    assert items_of(client)[0]["created_at"] == "2026-10-19T10:01:00Z"
+
+
+@pytest.mark.parametrize("arrival", ["created_first", "captured_first"])
+def test_the_authorization_event_decides_its_currency_in_any_order(send, fund, auth_event, client, arrival):
+    fund()
+    created = auth_event("authorization.created", "10.00", currency="EUR")
+    captured = auth_event("authorization.captured", "10.00", currency="USD")
+
+    deliver_all(send, [created, captured] if arrival == "created_first" else [captured, created])
+
+    assert items_of(client)[0]["currency"] == "EUR"
+    assert balance_of(client)["available"] == "1000.00"

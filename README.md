@@ -8,28 +8,22 @@
 <p align="center">
   <a href="https://github.com/OleksiukStepan/payflow-ledger/actions/workflows/ci.yml"><img src="https://github.com/OleksiukStepan/payflow-ledger/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python 3.13">
-  <img src="https://img.shields.io/badge/FastAPI-0.142-009688?logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 17">
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" width="760" alt="Read-only account page after the happy path: 585.00 available, 15.00 on hold, four authorizations">
-</p>
-
-## Quick start
+## 1. Run and test
 
 ```bash
-docker compose up --build
+docker compose up --build        # http://localhost:8000, schema migrated on start
 ```
-
-The service listens on http://localhost:8000 and migrates its schema on start.
 
 | Open | What it is |
 |---|---|
-| http://localhost:8000/ | read-only page of one account: balance, the formula written out, every authorization; refreshes every 3 s |
-| http://localhost:8000/docs | Swagger: how to sign a webhook, an example body per event type, every possible answer |
+| http://localhost:8000/ | read-only page of one account (balance and every authorization), refreshes every 3 s |
+| http://localhost:8000/docs | Swagger: how to sign a webhook, example bodies, every possible answer |
 
-Send the provider's events with the sender from [mekasp/PayFlow](https://github.com/mekasp/PayFlow):
+<img src="docs/screenshots/dashboard.png" width="720" alt="The account page after the happy path: 585.00 USD available, 15.00 USD on hold, four authorizations">
+
+With the sender from [mekasp/PayFlow](https://github.com/mekasp/PayFlow):
 
 ```bash
 python3 PayFlowEventsSender.py happy_path.json
@@ -37,142 +31,72 @@ curl localhost:8000/accounts/acc_1/balance
 # {"account_id":"acc_1","currency":"USD","available":"585.00","pending":"15.00"}
 ```
 
-### Verify in one command
-
-PayFlow's sender delivers events one by one, in file order. The PayFlow docs promise something harsher: duplicates, any order, parallel requests. `scripts/replay.py` (standard library only, like the sender) delivers that way and checks the result:
-
-```bash
-make verify
-```
+**Verify the way PayFlow really delivers.** The sender sends one event at a time, in file order; the PayFlow docs promise duplicates, any order and parallel requests. `make verify` starts the stack and runs `scripts/replay.py` (standard library only) over `scenarios/happy_path.json` and `scenarios/edge_cases.json`: shuffled, with five extra copies, from 16 threads. It then checks every balance and authorization against `scenarios/expected.json` and exits 1 on any mismatch. Run it twice: the second run answers `duplicate` to everything and the numbers do not move. CI does both.
 
 ```
-Delivered 43 requests (38 from files + 5 extra) in 0.20s
-Seed 486731 (pass --seed 486731 to reproduce the same order)
-Answers: duplicate 10, ignored 1, ok 32
-
-subject    field         expected     actual
-acc_1      available       585.00     585.00
-acc_1      pending          15.00      15.00
-auth_100   status        captured   captured
+Answers: duplicate 6, ignored 1, ok 23
 ...
-58/58 checks match
+40/40 checks match
 ```
 
-It starts the stack, sends every event file shuffled, with five extra copies, from 16 threads, and compares all balances and authorizations with `scenarios/expected.json`; any mismatch or failed delivery exits 1. Run it again on the same database and every answer is `duplicate` with the same 58/58. CI does both on every push. The flags work on any file: `python3 scripts/replay.py --help`.
+**Tests:** `docker compose run --rm --build tests` (or `make test`). They run against a real PostgreSQL, in a `*_test` database that each run drops and migrates, because what is tested (`ON CONFLICT`, `NUMERIC`, concurrent transactions) is PostgreSQL behaviour:
 
-### Tests
-
-```bash
-docker compose run --rm --build tests      # or: make test
-```
-
-63 tests run against a real PostgreSQL (a separate `payflow_test` database that every run drops, recreates and migrates), because the guarantees under test (`ON CONFLICT`, `NUMERIC`, concurrent transactions) are PostgreSQL behaviour:
-
-- signature, body cap and validation, secret rotation;
-- every ledger rule from the PayFlow docs and the assumptions below;
-- the happy path reversed, twice and in 50 seeded shuffles with duplicates, and from 16 threads at once;
-- **property-based tests** ([Hypothesis](https://hypothesis.readthedocs.io)): random account histories delivered in random order with random repeats must equal an in-order delivery, and `available` must always equal the formula. They were checked against deliberately broken code: the shrunk counterexample for "created overwrites a reversal" is a 0.01 hold that comes back after its reversal arrived first;
-- the scenario files against `scenarios/expected.json`, the API docs and the dashboard's security headers.
-
-Outside Docker: `pip install -e ".[dev]"`, point `DATABASE_URL` at a database whose name ends in `_test` (the suite drops and recreates it, and refuses any other name) and run `pytest`.
-
-### Event files
-
-| File | What it delivers | Expected |
-|---|---|---|
-| `tests/fixtures/happy_path.json` | the provider's happy path on `acc_1` | 585.00 available, 15.00 pending |
-| `scenarios/shuffled_duplicates.json` | the happy path on `acc_2`, shuffled, four events twice | 585.00 available, 15.00 pending |
-| `scenarios/edge_cases.json` | `acc_3`: events before the first funding, capture above and below the hold, partial reversal, capture racing a reversal, two refunds and a re-sent one, an unknown event type, a EUR authorization | 555.00 available, 0.00 pending |
-
-All of them also work with PayFlow's own sender. Full expectations per authorization: `scenarios/expected.json`.
-
-## API
+- signature, body cap and validation; every ledger rule and assumption below;
+- concurrency: every happy-path event three times, in random order, from 16 threads;
+- a property-based test ([Hypothesis](https://hypothesis.readthedocs.io)): random account histories delivered in random order with random repeats must equal an in-order delivery, and `available` must equal the formula. Checked against deliberately broken code: it shrinks a "created overwrites a reversal" bug to a 0.01 counterexample.
 
 | Endpoint | Answers |
 |---|---|
-| `POST /webhooks` | `200 {"status": "ok"}` applied, `200 {"status": "duplicate"}` already applied, `200 {"status": "ignored"}` unknown type (stored), `400` invalid payload, `401` bad or missing signature, `413` body over 64 KB |
-| `GET /accounts/{id}/balance` | `200` with `available` and `pending` as two-decimal strings, `404` for an unknown account |
-| `GET /accounts/{id}/transactions` | `200` with every authorization of the account and its current state, `404` for an unknown account |
-| `GET /` | the read-only account page |
-| `GET /docs`, `/openapi.json` | API documentation |
-| `GET /health` | `200`, used by the compose healthcheck |
+| `POST /webhooks` | `200` with `ok`, `duplicate` or `ignored` (unknown type, stored); `400` signed but invalid; `401` bad or missing signature; `413` body over 64 KB |
+| `GET /accounts/{id}/balance` | `200` `available` and `pending` as two-decimal strings; `404` unknown account |
+| `GET /accounts/{id}/transactions` | `200` every authorization with its state; `404` unknown account |
 
-`available = funded − pending − captured + refunded`, all in the account currency.
+Configuration: `WEBHOOK_SECRET` (required, never empty) and `DATABASE_URL`.
 
-Configuration: `WEBHOOK_SECRET` (required, never empty), `WEBHOOK_SECRET_PREVIOUS` (optional, the secret being rotated out), `DATABASE_URL`. See `.env.example`.
+## 2. Assumptions
 
-## Assumptions
+Where the assignment and the PayFlow docs are silent:
 
-Where the assignment and the PayFlow docs are silent, the service does the following.
+- **An account exists from its first `account.funded`.** Earlier events are stored and applied; both GET endpoints answer 404 until the funding arrives, then everything counts.
+- **The account currency is that of the first funding to arrive.** Events in another currency are stored and listed but left out of the balance, with a warning. No conversion.
+- **An authorization's facts are independent**: created, captured and reversed each fill their own fields. If two events of the same kind arrive for one authorization (two captures, say), the newer by `created_at` wins, and at equal times the larger amount, so the result never depends on arrival order. `authorization.created` decides the authorization's currency.
+- **Capture wins over reversal.** With out-of-order delivery both can show up; money that was taken is the stronger fact, and the conflict is logged.
+- **A reversal releases the whole hold**, even for a smaller amount (the docs say the hold is released). The amount is kept.
+- **Refunds count as they come**, before the capture or above it: `refunded` is defined as the sum of all refunds and order is not guaranteed. A refund re-sent under a new event id counts once (`refund_id` is unique).
+- **`available` may go negative.** PayFlow approves operations, the ledger records them.
+- **Ids are unique across accounts.** An event for an authorization that belongs to another account is ignored with a warning.
+- **Signed but invalid answers 400** (bad amount, missing field, a value PostgreSQL cannot store such as a NUL character, `created_at` outside 1970–9000). It is a contract violation, nothing is stored, and PayFlow's retries are harmless. **Unknown event types answer 200** and are kept; unknown fields are ignored.
+- **Amounts are strings with two decimals and ASCII digits** (`[0-9]{1,12}\.[0-9]{2}`), as the docs say; `merchant` is optional and unbounded.
+- **Transactions are sorted by `created_at`**, shown in UTC whole seconds. An authorization known only from a capture or reversal shows `merchant`, `authorized_amount` and `created_at` as `null` until `authorization.created` arrives.
 
-- **An account exists from its first `account.funded`.** Events that arrive earlier are stored and applied; both GET endpoints answer 404 until the funding arrives, then everything counts.
-- **The account currency is the currency of the first funding that arrives.** Events in another currency are stored and listed in transactions, but left out of the balance and logged as a warning. No conversion.
-- **Capture wins over reversal.** The lifecycle says an authorization is either captured or reversed; with out-of-order delivery both facts can still show up. Money that was taken is the stronger fact, and the conflict is logged.
-- **A reversal releases the whole hold**, even when its amount is smaller than the authorization (the docs say the hold is released and nothing is charged). The amount is kept for audit.
-- **Refunds count as they come**: before the capture arrives, or above the captured amount. The task defines `refunded` as the sum of all refunds; the order is not guaranteed, so they are not validated against the capture. A refund re-sent under a new event id counts once (`refund_id` is unique).
-- **`available` may go negative.** PayFlow approves operations, not us; the ledger records what happened.
-- **A valid signature with an invalid payload answers 400.** It is a contract violation, not an attack; PayFlow keeps retrying, which is visible on both sides and harmless because processing is idempotent. Nothing is stored for it. (See the Stripe comparison below for the trade-off.)
-- **Unknown event types answer 200** and are stored, so they can be replayed once supported. Unknown fields are ignored (forward compatible).
-- **`authorization_id` and `refund_id` are unique across accounts**; a redelivery with the same event `id` is the same event, its content is not compared.
-- **Amounts are strings with exactly two decimals** (`^\d{1,12}\.\d{2}$`), as the docs specify; a JSON number or `"12.5"` is rejected. `merchant` is optional.
-- **Transactions are sorted by the authorization's `created_at`**; an authorization known only from a capture or reversal has `merchant`, `authorized_amount` and `created_at` set to `null` until `authorization.created` arrives, and is listed last.
+## 3. Key decisions
 
-## Key decisions
+**Exactly-once effect on at-least-once delivery.** Each event is inserted into `events` by its PayFlow `id` (`INSERT ... ON CONFLICT DO NOTHING RETURNING id`) in the same transaction that applies it. No row back means a duplicate: answer 200. If anything fails midway, the event row rolls back with it and PayFlow's retry starts clean. Concurrent copies are serialized by the primary key itself.
 
-**Exactly-once effect on top of at-least-once delivery.** Every event is inserted into `events` with its PayFlow `id` as the primary key (`INSERT ... ON CONFLICT DO NOTHING RETURNING id`) in the same transaction that applies it. No row returned means a duplicate: answer 200 and stop. If anything fails midway, the transaction rolls back together with the event row, PayFlow retries and processing starts clean. Concurrent duplicates are serialized by the primary key itself: the second insert waits for the first transaction and then does nothing.
+**Facts, not transitions.** No event says "move to captured". Each writes its own columns through an atomic upsert that only replaces an older fact, and the status is a PostgreSQL generated column (`captured` if a capture exists, else `reversed`, else `pending`). Any delivery order gives the same state; the property test checks this on random histories.
 
-**Facts, not transitions.** An event never says "move to captured"; it records a fact in the authorization's own column: `authorized_amount` (created), `captured_amount`, `reversed_amount`. Each event type writes only its columns through an atomic upsert, so reordered or parallel events cannot overwrite each other. The status is a PostgreSQL generated column (`captured` if a capture exists, else `reversed`, else `pending`), so the result is the same for every delivery order, which the property-based tests check on random histories.
+**No stored balance.** A running total needs read-modify-write on every event and loses updates under parallel delivery unless every event locks the account. The balance is four `SUM`s in one statement instead, which is also one consistent snapshot.
 
-**No stored balance.** A running balance column needs a read-modify-write on every event and loses updates under parallel delivery unless every event locks the account. Instead the balance is four `SUM`s in one statement, which also makes it one consistent snapshot. Reads cost one indexed scan of the account's rows; see production notes for when to change that.
+**The raw body is the only truth for the signature.** It is read with a 64 KB cap and the HMAC is computed over exactly those bytes, compared in constant time on bytes (a non-ASCII header cannot crash it). Re-serialized JSON would not match. Money is `Decimal` / `NUMERIC(14,2)` and must arrive as a string: a JSON number has already been through a float.
 
-**Signature over the raw bytes, before anything else.** The body is read with a 64 KB cap, the HMAC-SHA256 is computed over exactly those bytes and compared in constant time (`hmac.compare_digest`, on bytes so a non-ASCII header cannot crash it). Re-serializing parsed JSON would change spacing or key order and break the signature. During a rotation both secrets are checked, always both, so timing does not reveal which one matched.
+**FastAPI, SQLAlchemy 2 (sync), Alembic.** Three endpoints do not need Django, and PostgreSQL's upsert is first-class in SQLAlchemy while Django's `update_or_create` is not atomic under concurrency. One millisecond-scale transaction per webhook (0.5 s worst case at 200 parallel senders) fits PayFlow's 10 s budget, so there is no queue to run. The page treats webhook data as untrusted: values reach the DOM through `textContent` only, under a CSP without inline scripts.
 
-**Money is `Decimal` and `NUMERIC(14,2)`, never float.** Amounts must arrive as strings: a JSON number has already been through a float by the time it is parsed. The dashboard adds amounts in integer cents for the same reason.
+## 4. Not done, on purpose
 
-**Webhook data is untrusted on the page too.** Merchant names arrive in webhooks, so the dashboard only writes API values into the page with `textContent`, a test forbids HTML sinks in its script, and the page is served with a Content-Security-Policy that allows no inline script and no other origin. A merchant called `<img src=x onerror=...>` shows up as that text.
-
-**FastAPI + SQLAlchemy 2 (sync) + Alembic.** Three endpoints do not need Django's machinery, and the PostgreSQL-specific upsert (`insert().on_conflict_do_update()`) is first-class in SQLAlchemy, while Django's `update_or_create` is not atomic under concurrency. The DB layer is synchronous and runs in FastAPI's thread pool: simpler to read and test, and the database is the bottleneck anyway.
-
-**Fast, synchronous processing.** One short transaction per webhook takes milliseconds (0.2 s worst case with 24 parallel senders locally), well inside PayFlow's 10 s budget, so there is no queue to operate.
-
-## Compared with Stripe's current webhook guidance
-
-PayFlow is modelled on card-issuing providers, so the implementation was checked against Stripe's webhook and Issuing documentation as of October 2026. PayFlow's own format (body-only signature, no events API) limits what applies.
-
-| Stripe practice | Here |
-|---|---|
-| Verify an HMAC-SHA256 over the raw body in constant time ([webhooks](https://docs.stripe.com/webhooks)) | Same. |
-| Sign a timestamp with the body and reject events older than 5 minutes ([replay attacks](https://docs.stripe.com/webhooks)) | Not possible: PayFlow signs the body only. A replayed event is a harmless duplicate; a timestamped signature is the first thing to ask PayFlow for. |
-| Roll the signing secret with the old one valid for up to 24 h ([roll secrets](https://docs.stripe.com/webhooks)) | `WEBHOOK_SECRET_PREVIOUS`. |
-| Only 2xx counts; anything else is retried for up to 3 days, and an endpoint that keeps failing for several days is disabled ([retries](https://docs.stripe.com/webhooks), [support](https://support.stripe.com/questions/why-is-stripe-trying-to-reach-my-webhook-endpoints)) | 2xx for everything stored, unknown types included. The one deliberate 4xx with a valid signature is 400 for an invalid payload; if the provider disables endpoints the way Stripe does, a steady stream of them could switch the endpoint off, so production should store such payloads in a dead-letter table and answer 2xx. |
-| Return 2xx quickly, process asynchronously ([best practices](https://docs.stripe.com/webhooks)) | Processing is one millisecond-scale transaction before answering, which keeps the guarantee simple (answered means stored). A queue becomes worth it under real load. |
-| Deduplicate by event id; the same change can occasionally produce two events, so deduplicate by object too ([duplicates](https://docs.stripe.com/webhooks)) | Event id is the primary key; refunds are also unique by `refund_id`; authorization facts are idempotent per authorization. |
-| Do not rely on order; fetch the current object when an event arrives early ([event ordering](https://docs.stripe.com/webhooks)), which is also why Stripe now recommends thin events ([how events work](https://docs.stripe.com/events/how-events-work)) | PayFlow has no API to fetch from, so the ledger is built to be order-independent from the payloads alone. |
-| Allowlist Stripe's webhook IPs as well as verifying signatures ([IPs](https://docs.stripe.com/ips)) | PayFlow publishes no IP ranges; add an allowlist at the edge if it does. |
-| Reconcile missed events through the events API, kept for 30 days ([manage endpoints](https://docs.stripe.com/events/manage-webhook-endpoints)) | Needs a PayFlow events API; listed under production work. |
-
-Real issuing models are richer than PayFlow's docs ([authorizations](https://docs.stripe.com/issuing/purchases/authorizations), [transactions](https://docs.stripe.com/issuing/purchases/transactions)): several captures per authorization, captures with no authorization at all, refunds not linked to an authorization, partial reversals that keep the hold open, and an `expired` status. The fact-per-column model extends to those by moving captures and reversals into their own tables keyed by the provider's transaction id, the way refunds already are; it already accepts a capture whose authorization never arrived.
-
-## Not done, on purpose
-
-- **No authentication on the read endpoints or the page.** The assignment does not ask for it; anyone who can reach the service can read any balance.
-- **No replay protection beyond the event id**, see the Stripe comparison.
+- **No authentication on the read endpoints or the page**; the assignment does not ask for it.
+- **No replay protection beyond the event id**: PayFlow signs no timestamp. A replayed event is a harmless duplicate, but a captured request stays valid forever.
 - **No queue or worker**, see above.
-- **No tooling to replay stored unknown events** or to inspect rejected payloads (their validation errors are logged, the bodies are not stored).
+- **No dead-letter store or replay command** for rejected payloads or unknown types (their errors are logged).
 - **No pagination**, as the assignment says.
 
-## Before production
+## 5. Before production
 
-- Load the webhook secret from a secret manager; rotate with `WEBHOOK_SECRET_PREVIOUS`.
-- Ask PayFlow for a timestamped signature (Stripe-style `t=...,v1=...`) and reject requests older than a few minutes.
-- Authenticate the read endpoints and the page, and check that the caller may see the account; rate-limit `/webhooks`; allowlist the provider's IPs if published.
-- Store rejected payloads in a dead-letter table, answer 2xx for them, and add a replay command for them and for unknown event types.
-- Reconcile against PayFlow's API on a schedule: webhooks can be lost after 72 hours of failed retries.
-- Run migrations as a separate deploy step instead of on container start, so several replicas do not race.
-- Structured JSON logs with the event id, metrics and alerts on 4xx rates and on the anomaly warnings (capture plus reversal, foreign currency).
-- If accounts grow large: keep per-account totals updated in the same transaction (with a row lock on the account) or periodic snapshots, instead of summing on every read.
-- Lock dependencies with hashes; run the app under a process manager with a sized connection pool.
+- Ask PayFlow for a timestamped signature and reject old requests, as [Stripe does](https://docs.stripe.com/webhooks) (`t=...,v1=...`, 5-minute tolerance). Load the secret from a secret manager and accept the old and the new secret side by side while rotating it.
+- Answer 2xx to signed but invalid payloads and keep them in a dead-letter table: providers like Stripe [disable endpoints](https://support.stripe.com/questions/why-is-stripe-trying-to-reach-my-webhook-endpoints) that keep failing for days.
+- Reconcile against a PayFlow events API on a schedule: webhooks are lost after 72 h of failed retries ([Stripe's approach](https://docs.stripe.com/events/manage-webhook-endpoints)).
+- Authenticate the read endpoints and the page; rate-limit `/webhooks`; allowlist PayFlow's IPs if published.
+- Run migrations as a separate deploy step, not on container start, so replicas do not race.
+- Structured logs with the event id, alerts on 4xx rates and on the anomaly warnings.
+- For large accounts: per-account totals maintained in the same transaction under a row lock, instead of summing on every read.
 
-## Project layout
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the code map, the data model and the invariants, and [CHANGELOG.md](CHANGELOG.md) for what changed.
+Code map, data model and invariants: [ARCHITECTURE.md](ARCHITECTURE.md).

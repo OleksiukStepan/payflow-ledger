@@ -3,14 +3,15 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app import ledger
-from app.api_docs import ACCOUNT_NOT_FOUND, DESCRIPTION, WEBHOOK_REQUEST_BODY, WEBHOOK_RESPONSES
+from app.api_docs import ACCOUNT_NOT_FOUND, DESCRIPTION, WEBHOOK_OPENAPI, WEBHOOK_RESPONSES
 from app.config import MAX_BODY_BYTES
 from app.db import get_session
 from app.schemas import Balance, Transactions, WebhookAck, parse_event
@@ -35,6 +36,13 @@ DASHBOARD_HEADERS = {
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.exception_handler(DataError)
+async def reject_unstorable_value(request: Request, error: DataError) -> JSONResponse:
+    # SQLSTATE class 22 (e.g. a NUL character in text) is permanent: a 500 would only make PayFlow retry for 72 h.
+    logger.warning("Rejected a value PostgreSQL cannot store: %s", error.orig)
+    return JSONResponse(status_code=400, content={"detail": "a value cannot be stored"})
+
+
 @app.get("/", include_in_schema=False)
 def dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html", headers=DASHBOARD_HEADERS)
@@ -54,7 +62,7 @@ async def _read_body(request: Request) -> bytes:
     return bytes(body)
 
 
-@app.post("/webhooks", responses=WEBHOOK_RESPONSES, openapi_extra=WEBHOOK_REQUEST_BODY)
+@app.post("/webhooks", responses=WEBHOOK_RESPONSES, openapi_extra=WEBHOOK_OPENAPI)
 async def receive_webhook(request: Request) -> WebhookAck:
     body = await _read_body(request)
     if not is_valid_signature(body, request.headers.get("X-PayFlow-Signature")):
@@ -71,7 +79,8 @@ async def receive_webhook(request: Request) -> WebhookAck:
     return WebhookAck(status=status)
 
 
-@app.get("/accounts/{account_id}/balance", responses=ACCOUNT_NOT_FOUND)
+# :path lets account ids contain "/", which the router would otherwise split on.
+@app.get("/accounts/{account_id:path}/balance", responses=ACCOUNT_NOT_FOUND)
 def get_balance(account_id: str, session: SessionDep) -> Balance:
     balance = ledger.get_balance(session, account_id)
     if balance is None:
@@ -79,7 +88,7 @@ def get_balance(account_id: str, session: SessionDep) -> Balance:
     return balance
 
 
-@app.get("/accounts/{account_id}/transactions", responses=ACCOUNT_NOT_FOUND)
+@app.get("/accounts/{account_id:path}/transactions", responses=ACCOUNT_NOT_FOUND)
 def get_transactions(account_id: str, session: SessionDep) -> Transactions:
     transactions = ledger.get_transactions(session, account_id)
     if transactions is None:

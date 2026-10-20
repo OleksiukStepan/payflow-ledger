@@ -1,10 +1,10 @@
 import logging
 from collections.abc import Callable
-from datetime import UTC
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -57,33 +57,74 @@ def _apply_funding(session: Session, event: IncomingEvent, data: AccountFunded) 
 
 def _apply_authorization_created(session: Session, event: IncomingEvent, data: AuthorizationCreated) -> None:
     _record_authorization_facts(
-        session, data, merchant=data.merchant, authorized_amount=data.amount, created_at=event.created_at
+        session,
+        data,
+        (Authorization.created_at, Authorization.authorized_amount),
+        merchant=data.merchant,
+        authorized_amount=data.amount,
+        created_at=event.created_at,
+        # The authorization's own event decides its currency, not whichever event arrived first.
+        currency=data.currency,
     )
 
 
 def _apply_authorization_captured(session: Session, event: IncomingEvent, data: AuthorizationClosed) -> None:
-    _record_authorization_facts(session, data, captured_amount=data.amount)
+    _record_authorization_facts(
+        session,
+        data,
+        (Authorization.captured_at, Authorization.captured_amount),
+        captured_amount=data.amount,
+        captured_at=event.created_at,
+    )
 
 
 def _apply_authorization_reversed(session: Session, event: IncomingEvent, data: AuthorizationClosed) -> None:
-    _record_authorization_facts(session, data, reversed_amount=data.amount)
+    _record_authorization_facts(
+        session,
+        data,
+        (Authorization.reversed_at, Authorization.reversed_amount),
+        reversed_amount=data.amount,
+        reversed_at=event.created_at,
+    )
 
 
 def _record_authorization_facts(
-    session: Session, data: AuthorizationCreated | AuthorizationClosed, **facts: Any
+    session: Session, data: AuthorizationCreated | AuthorizationClosed, version: tuple[Any, Any], **facts: Any
 ) -> None:
-    # Each event type owns its own columns, so concurrent or reordered upserts never overwrite each other.
+    # Each event type owns its columns and only replaces an older fact (time, then amount): order never matters.
     statement = insert(Authorization).values(
-        authorization_id=data.authorization_id, account_id=data.account_id, currency=data.currency, **facts
+        {"authorization_id": data.authorization_id, "account_id": data.account_id, "currency": data.currency, **facts}
     )
+    incoming = tuple_(*(statement.excluded[column.key] for column in version))
+    newer = or_(version[0].is_(None), incoming > tuple_(*version))
     row = session.execute(
-        statement.on_conflict_do_update(index_elements=[Authorization.authorization_id], set_=facts).returning(
-            Authorization.captured_amount, Authorization.reversed_amount
-        )
-    ).one()
+        statement.on_conflict_do_update(
+            index_elements=[Authorization.authorization_id],
+            set_=facts,
+            where=and_(Authorization.account_id == data.account_id, newer),
+        ).returning(Authorization.captured_amount, Authorization.reversed_amount)
+    ).first()
+    if row is None:
+        _log_skipped_fact(session, data)
+        return
     closes = "captured_amount" in facts or "reversed_amount" in facts
     if closes and row.captured_amount is not None and row.reversed_amount is not None:
         logger.warning("Authorization %s is both captured and reversed, treating it as captured", data.authorization_id)
+
+
+def _log_skipped_fact(session: Session, data: AuthorizationCreated | AuthorizationClosed) -> None:
+    owner = session.scalar(
+        select(Authorization.account_id).where(Authorization.authorization_id == data.authorization_id)
+    )
+    if owner != data.account_id:
+        logger.warning(
+            "Authorization %s belongs to account %s, ignored an event for account %s",
+            data.authorization_id,
+            owner,
+            data.account_id,
+        )
+    else:
+        logger.info("Authorization %s already has a newer fact of this kind, kept it", data.authorization_id)
 
 
 def _apply_refund(session: Session, event: IncomingEvent, data: RefundCreated) -> None:
@@ -122,6 +163,11 @@ def _warn_on_foreign_currency(session: Session, event_id: str, account_id: str, 
         )
 
 
+def _utc_seconds(value: datetime) -> datetime:
+    # The assignment's format: "2026-10-19T10:01:00Z", UTC and whole seconds.
+    return value.astimezone(UTC).replace(microsecond=0)
+
+
 def _money(value: Decimal) -> str:
     return f"{value:.2f}"
 
@@ -156,14 +202,22 @@ def get_balance(session: Session, account_id: str) -> Balance | None:
 def get_transactions(session: Session, account_id: str) -> Transactions | None:
     if session.get(Account, account_id) is None:
         return None
+    # Same filter as the balance: only refunds of this account in the authorization's currency.
     refunded = (
-        select(Refund.authorization_id, func.sum(Refund.amount).label("amount"))
-        .group_by(Refund.authorization_id)
+        select(Refund.authorization_id, Refund.account_id, Refund.currency, func.sum(Refund.amount).label("amount"))
+        .group_by(Refund.authorization_id, Refund.account_id, Refund.currency)
         .subquery()
     )
     rows = session.execute(
         select(Authorization, func.coalesce(refunded.c.amount, 0))
-        .outerjoin(refunded, refunded.c.authorization_id == Authorization.authorization_id)
+        .outerjoin(
+            refunded,
+            and_(
+                refunded.c.authorization_id == Authorization.authorization_id,
+                refunded.c.account_id == Authorization.account_id,
+                refunded.c.currency == Authorization.currency,
+            ),
+        )
         .where(Authorization.account_id == account_id)
         .order_by(Authorization.created_at.asc().nulls_last(), Authorization.authorization_id)
     ).all()
@@ -179,7 +233,7 @@ def get_transactions(session: Session, account_id: str) -> Transactions | None:
                 ),
                 captured_amount=_money(authorization.captured_amount or Decimal(0)),
                 refunded_amount=_money(refunded_amount),
-                created_at=authorization.created_at.astimezone(UTC) if authorization.created_at else None,
+                created_at=_utc_seconds(authorization.created_at) if authorization.created_at else None,
             )
             for authorization, refunded_amount in rows
         ]

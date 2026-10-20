@@ -60,32 +60,17 @@ def deliver_and_read(send, client, events):
     return client.get("/accounts/acc_p/balance").json(), client.get("/accounts/acc_p/transactions").json()
 
 
-PROPERTY_SETTINGS = settings(
-    max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
-)
-
-
-@PROPERTY_SETTINGS
+@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(case=deliveries())
-def test_order_and_duplicates_never_change_the_result(send, client, reset_db, case):
-    in_order, shuffled_with_repeats, _ = case
+def test_order_and_duplicates_never_change_the_result_and_the_balance_follows_the_formula(send, client, reset_db, case):
+    in_order, shuffled_with_repeats, totals = case
 
     reset_db()
     expected = deliver_and_read(send, client, in_order)
     reset_db()
-    actual = deliver_and_read(send, client, shuffled_with_repeats)
+    balance, transactions = deliver_and_read(send, client, shuffled_with_repeats)
 
-    assert actual == expected
-
-
-@PROPERTY_SETTINGS
-@given(case=deliveries())
-def test_balance_always_follows_the_formula(send, client, reset_db, case):
-    _, shuffled_with_repeats, totals = case
-
-    reset_db()
-    balance, _ = deliver_and_read(send, client, shuffled_with_repeats)
-
+    assert (balance, transactions) == expected
     available = totals["funded"] - totals["pending"] - totals["captured"] + totals["refunded"]
     assert balance["available"] == f"{available:.2f}"
     assert balance["pending"] == f"{totals['pending']:.2f}"

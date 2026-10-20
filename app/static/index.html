@@ -13,17 +13,16 @@
     <header class="top">
       <div>
         <h1>PayFlow Ledger</h1>
-        <p class="muted">Read-only view of one account. Data comes from the same API as <code>/balance</code> and <code>/transactions</code>.</p>
+        <p class="muted">Read-only view of one account, from <code>/balance</code> and <code>/transactions</code>.</p>
       </div>
-      <a class="docs-link" href="/docs">API docs</a>
+      <a href="/docs">API docs</a>
     </header>
 
     <form id="account-form" class="controls" autocomplete="off">
       <label for="account-id">Account</label>
-      <input id="account-id" name="account" list="known-accounts" value="acc_1" maxlength="255" required>
+      <input id="account-id" list="known-accounts" value="acc_1" maxlength="255" required>
       <datalist id="known-accounts">
-        <option value="acc_1">happy_path.json</option>
-        <option value="acc_2">scenarios/shuffled_duplicates.json</option>
+        <option value="acc_1">scenarios/happy_path.json</option>
         <option value="acc_3">scenarios/edge_cases.json</option>
       </datalist>
       <button type="submit">Show</button>
@@ -31,22 +30,17 @@
       <span id="updated" class="muted" aria-live="polite"></span>
     </form>
 
-    <section id="empty" class="empty" hidden>
-      <h2 id="empty-title">No account yet</h2>
+    <section id="empty" class="panel" hidden>
+      <h2>No account yet</h2>
       <p id="empty-text" class="muted"></p>
-      <pre class="hint">python3 scripts/replay.py tests/fixtures/happy_path.json</pre>
+      <pre>make verify</pre>
     </section>
 
     <section id="account" hidden>
       <div class="cards">
-        <div class="card primary"><span class="label">Available</span><b id="available"></b><span id="currency" class="muted"></span></div>
-        <div class="card"><span class="label">On hold (pending)</span><b id="pending"></b></div>
-        <div class="card"><span class="label">Captured</span><b id="captured"></b></div>
-        <div class="card"><span class="label">Refunded</span><b id="refunded"></b></div>
+        <div class="card"><span class="muted">Available</span><b id="available" class="accent"></b></div>
+        <div class="card"><span class="muted">On hold (pending)</span><b id="pending"></b></div>
       </div>
-
-      <p class="formula" id="formula"></p>
-
       <div class="table-wrap">
         <table>
           <thead>
@@ -58,8 +52,7 @@
           <tbody id="rows"></tbody>
         </table>
       </div>
-      <p class="muted small">Captured and refunded totals above add up the authorizations listed in the account currency.
-        Funded is derived from the balance: available + pending + captured &minus; refunded.</p>
+      <p class="muted small">Rows in another currency than the account are listed but left out of the balance.</p>
     </section>
 
     <p id="error" class="error" role="alert" hidden></p>
