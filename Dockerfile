@@ -25,4 +25,5 @@ USER root
 RUN pip install --no-cache-dir ".[dev]"
 COPY tests ./tests
 COPY scenarios ./scenarios
+COPY scripts ./scripts
 CMD ["pytest", "-q"]

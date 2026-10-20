@@ -149,3 +149,13 @@ def test_duplicate_delivery_is_applied_once(send, make_event, client):
     assert second.status_code == 200
     assert second.json() == {"status": "duplicate"}
     assert client.get("/accounts/acc_1/balance").json()["available"] == "1000.00"
+
+
+def test_previous_secret_keeps_working_during_rotation(send, make_event, client, monkeypatch):
+    monkeypatch.setattr("app.signature.WEBHOOK_SECRETS", (b"whsec_new", b"whsec_test_123"))
+    event = funded(make_event)
+    body = serialize(event)
+
+    assert send(event, signature=sign(body, secret=b"whsec_new")).status_code == 200
+    assert send({**event, "id": "evt_rotation_2"}, signature=None).status_code == 200
+    assert send({**event, "id": "evt_rotation_3"}, signature=sign(body, secret=b"whsec_other")).status_code == 401
