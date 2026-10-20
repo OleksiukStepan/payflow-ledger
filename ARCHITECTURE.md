@@ -7,7 +7,7 @@ Code map, data model and invariants; update with any new table, event type or en
 | File | Owns |
 |---|---|
 | `app/main.py` | routes and the HTTP status of every outcome, body cap, the read-only page and its CSP |
-| `app/signature.py` | HMAC-SHA256 over the raw body, constant-time, current and previous secret |
+| `app/signature.py` | HMAC-SHA256 over the raw body, constant-time on bytes |
 | `app/schemas.py` | strict input per event type (amounts, currencies, `created_at` range), response models |
 | `app/ledger.py` | `process_event` (dedupe and apply in one transaction), one applier per event type, the two reads |
 | `app/models.py`, `migrations/` | tables, the generated `status` column; Alembic `0001` schema, `0002` json payload and fact times |

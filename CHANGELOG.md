@@ -3,9 +3,9 @@
 ## Unreleased
 
 ### Added
-- `POST /webhooks`: HMAC-SHA256 over the raw body (constant time, secret rotation through
-  `WEBHOOK_SECRET_PREVIOUS`), 64 KB cap, strict validation; 401 bad signature, 400 signed but
-  invalid, 413 too large, 200 for applied, duplicate and unknown-type events.
+- `POST /webhooks`: HMAC-SHA256 over the raw body in constant time, 64 KB cap, strict
+  validation; 401 bad signature, 400 signed but invalid, 413 too large, 200 for applied,
+  duplicate and unknown-type events.
 - Idempotent, order-independent ledger: events stored by PayFlow id in the transaction that
   applies them; authorization facts in their own columns, newest fact wins, status derived by
   PostgreSQL; refunds deduped by `refund_id`.

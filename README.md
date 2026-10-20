@@ -41,7 +41,7 @@ Answers: duplicate 6, ignored 1, ok 23
 
 **Tests:** `docker compose run --rm --build tests` (or `make test`). They run against a real PostgreSQL, in a `*_test` database that each run drops and migrates, because what is tested (`ON CONFLICT`, `NUMERIC`, concurrent transactions) is PostgreSQL behaviour:
 
-- signature, body cap, validation and secret rotation; every ledger rule and assumption below;
+- signature, body cap and validation; every ledger rule and assumption below;
 - concurrency: every happy-path event three times, in random order, from 16 threads;
 - a property-based test ([Hypothesis](https://hypothesis.readthedocs.io)): random account histories delivered in random order with random repeats must equal an in-order delivery, and `available` must equal the formula. Checked against deliberately broken code: it shrinks a "created overwrites a reversal" bug to a 0.01 counterexample.
 
@@ -51,7 +51,7 @@ Answers: duplicate 6, ignored 1, ok 23
 | `GET /accounts/{id}/balance` | `200` `available` and `pending` as two-decimal strings; `404` unknown account |
 | `GET /accounts/{id}/transactions` | `200` every authorization with its state; `404` unknown account |
 
-Configuration: `WEBHOOK_SECRET` (required, never empty), `WEBHOOK_SECRET_PREVIOUS` (optional, accepted during a rotation), `DATABASE_URL`.
+Configuration: `WEBHOOK_SECRET` (required, never empty) and `DATABASE_URL`.
 
 ## 2. Assumptions
 
@@ -77,7 +77,7 @@ Where the assignment and the PayFlow docs are silent:
 
 **No stored balance.** A running total needs read-modify-write on every event and loses updates under parallel delivery unless every event locks the account. The balance is four `SUM`s in one statement instead, which is also one consistent snapshot.
 
-**The raw body is the only truth for the signature.** It is read with a 64 KB cap and the HMAC is computed over exactly those bytes, compared in constant time on bytes (a non-ASCII header cannot crash it), against the current and, during a rotation, the previous secret. Re-serialized JSON would not match. Money is `Decimal` / `NUMERIC(14,2)` and must arrive as a string: a JSON number has already been through a float.
+**The raw body is the only truth for the signature.** It is read with a 64 KB cap and the HMAC is computed over exactly those bytes, compared in constant time on bytes (a non-ASCII header cannot crash it). Re-serialized JSON would not match. Money is `Decimal` / `NUMERIC(14,2)` and must arrive as a string: a JSON number has already been through a float.
 
 **FastAPI, SQLAlchemy 2 (sync), Alembic.** Three endpoints do not need Django, and PostgreSQL's upsert is first-class in SQLAlchemy while Django's `update_or_create` is not atomic under concurrency. One millisecond-scale transaction per webhook (0.5 s worst case at 200 parallel senders) fits PayFlow's 10 s budget, so there is no queue to run. The page treats webhook data as untrusted: values reach the DOM through `textContent` only, under a CSP without inline scripts.
 
@@ -91,7 +91,7 @@ Where the assignment and the PayFlow docs are silent:
 
 ## 5. Before production
 
-- Ask PayFlow for a timestamped signature and reject old requests, as [Stripe does](https://docs.stripe.com/webhooks) (`t=...,v1=...`, 5-minute tolerance). Load the secret from a secret manager; rotate with `WEBHOOK_SECRET_PREVIOUS`.
+- Ask PayFlow for a timestamped signature and reject old requests, as [Stripe does](https://docs.stripe.com/webhooks) (`t=...,v1=...`, 5-minute tolerance). Load the secret from a secret manager and accept the old and the new secret side by side while rotating it.
 - Answer 2xx to signed but invalid payloads and keep them in a dead-letter table: providers like Stripe [disable endpoints](https://support.stripe.com/questions/why-is-stripe-trying-to-reach-my-webhook-endpoints) that keep failing for days.
 - Reconcile against a PayFlow events API on a schedule: webhooks are lost after 72 h of failed retries ([Stripe's approach](https://docs.stripe.com/events/manage-webhook-endpoints)).
 - Authenticate the read endpoints and the page; rate-limit `/webhooks`; allowlist PayFlow's IPs if published.
