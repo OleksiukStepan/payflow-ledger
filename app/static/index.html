@@ -19,21 +19,22 @@
     </header>
 
     <form id="account-form" class="controls" autocomplete="off">
-      <label for="account-id">Account</label>
-      <input id="account-id" list="known-accounts" value="acc_1" maxlength="255" required>
-      <datalist id="known-accounts">
-        <option value="acc_1">scenarios/happy_path.json</option>
-        <option value="acc_3">scenarios/edge_cases.json</option>
-      </datalist>
+      <label for="scenario">Scenario</label>
+      <select id="scenario">
+        <option value="acc_1">acc_1: PayFlow happy path</option>
+        <option value="acc_3">acc_3: edge cases, out of order</option>
+        <option value="">Another account&hellip;</option>
+      </select>
+      <input id="account-id" placeholder="account id" maxlength="255" hidden>
       <button type="submit">Show</button>
       <label class="toggle"><input id="auto-refresh" type="checkbox" checked> Refresh every 3 s</label>
       <span id="updated" class="muted" aria-live="polite"></span>
     </form>
+    <p id="scenario-note" class="muted"></p>
 
     <section id="empty" class="panel" hidden>
       <h2>No account yet</h2>
       <p id="empty-text" class="muted"></p>
-      <pre>make verify</pre>
     </section>
 
     <section id="account" hidden>
@@ -56,6 +57,8 @@
     </section>
 
     <p id="error" class="error" role="alert" hidden></p>
+    <p class="muted small">Send your own events with PayFlow's sender and the test secret:
+      <code id="send-command"></code></p>
   </main>
 </body>
 </html>

@@ -2,6 +2,10 @@
 
 // Every value from the API reaches the page through textContent only: merchant names come from webhooks.
 const STATUSES = new Set(["pending", "captured", "reversed"]);
+const SCENARIOS = {
+  acc_1: "PayFlow's happy_path.json delivered in order: a funding, four authorizations, captures, a reversal and a refund. Expected: 585.00 available, 15.00 on hold.",
+  acc_3: "scenarios/edge_cases.json delivered out of order: events before the first funding, captures above and below the hold, a partial reversal, a capture racing a reversal, a re-sent refund, an unknown event type and a EUR authorization. Expected: 555.00 available, 0.00 on hold.",
+};
 const byId = (id) => document.getElementById(id);
 let latestRequest = 0;
 
@@ -69,19 +73,36 @@ async function load(accountId) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  const select = byId("scenario");
   const input = byId("account-id");
-  try {
-    if (location.hash.length > 1) input.value = decodeURIComponent(location.hash.slice(1));
-  } catch {
-    // A malformed link keeps the default account instead of breaking the page.
+  const account = () => select.value || input.value.trim();
+
+  function choose(accountId) {
+    select.value = Object.hasOwn(SCENARIOS, accountId) ? accountId : "";
+    input.hidden = select.value !== "";
+    if (input.hidden) input.value = "";
+    else if (accountId) input.value = accountId;
+    byId("scenario-note").textContent = SCENARIOS[select.value] ?? "Any account id that received events, for example from your own event files.";
+    history.replaceState(null, "", account() ? `#${encodeURIComponent(account())}` : location.pathname);
+    if (account()) load(account());
+    else show("");
   }
+
+  select.addEventListener("change", () => choose(select.value));
   byId("account-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    history.replaceState(null, "", `#${encodeURIComponent(input.value.trim())}`);
-    load(input.value.trim());
+    choose(account());
   });
   setInterval(() => {
-    if (byId("auto-refresh").checked && document.visibilityState === "visible") load(input.value.trim());
+    if (byId("auto-refresh").checked && document.visibilityState === "visible" && account()) load(account());
   }, 3000);
-  load(input.value.trim());
+
+  byId("send-command").textContent = `python3 PayFlowEventsSender.py happy_path.json --url ${location.origin}/webhooks`;
+  let fromLink = "acc_1";
+  try {
+    if (location.hash.length > 1) fromLink = decodeURIComponent(location.hash.slice(1));
+  } catch {
+    // A malformed link keeps the default scenario instead of breaking the page.
+  }
+  choose(fromLink);
 });
