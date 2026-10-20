@@ -15,6 +15,10 @@
   `make verify` (shuffled, duplicated, parallel replay checked against `scenarios/expected.json`),
   Swagger at `/docs`, a read-only account page at `/`, CI.
 
+### Changed
+- README is in Ukrainian (`README.md`, the reviewers' language) with an English mirror in
+  `README.en.md`; a switch at the top of each links to the other.
+
 ### Fixed
 - Found by an adversarial run against the live stack: a NUL character, an out-of-range
   `created_at` or an account id with `/` no longer cause a 500 or an unreadable account;
