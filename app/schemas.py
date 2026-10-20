@@ -1,11 +1,12 @@
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, BeforeValidator, StringConstraints
+from pydantic import AfterValidator, AwareDatetime, BaseModel, BeforeValidator, StringConstraints
 
-AMOUNT_PATTERN = re.compile(r"\d{1,12}\.\d{2}")
+# [0-9], not \d: \d also matches Arabic-Indic and other Unicode digits.
+AMOUNT_PATTERN = re.compile(r"[0-9]{1,12}\.[0-9]{2}")
 
 
 def _parse_amount(value: Any) -> Decimal:
@@ -15,30 +16,35 @@ def _parse_amount(value: Any) -> Decimal:
     return Decimal(value)
 
 
+def _to_utc(value: datetime) -> datetime:
+    # Years outside this range would be stored but could not be read back (or converted) later.
+    try:
+        utc = value.astimezone(UTC)
+    except OverflowError:
+        raise ValueError("created_at is out of range") from None
+    if not 1970 <= utc.year < 9000:
+        raise ValueError("created_at is out of range")
+    return utc
+
+
 Amount = Annotated[Decimal, BeforeValidator(_parse_amount)]
 Currency = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 Identifier = Annotated[str, StringConstraints(min_length=1, max_length=255)]
+UtcDatetime = Annotated[AwareDatetime, AfterValidator(_to_utc)]
 
 
 class Event(BaseModel):
     id: Identifier
     type: Identifier
-    created_at: AwareDatetime
-    data: dict[str, Any]
+    created_at: UtcDatetime
+    # Any: unknown event types are acknowledged whatever their data looks like.
+    data: Any
 
 
 class AccountFunded(BaseModel):
     account_id: Identifier
     amount: Amount
     currency: Currency
-
-
-class AuthorizationCreated(BaseModel):
-    account_id: Identifier
-    authorization_id: Identifier
-    amount: Amount
-    currency: Currency
-    merchant: Annotated[str, StringConstraints(max_length=255)] | None = None
 
 
 class AuthorizationClosed(BaseModel):
@@ -48,12 +54,12 @@ class AuthorizationClosed(BaseModel):
     currency: Currency
 
 
-class RefundCreated(BaseModel):
-    account_id: Identifier
+class AuthorizationCreated(AuthorizationClosed):
+    merchant: str | None = None
+
+
+class RefundCreated(AuthorizationClosed):
     refund_id: Identifier
-    authorization_id: Identifier
-    amount: Amount
-    currency: Currency
 
 
 EventData = AccountFunded | AuthorizationCreated | AuthorizationClosed | RefundCreated
